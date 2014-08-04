@@ -1,7 +1,5 @@
 ---
-title: "CTC King County (Communites in Action) Geography Overlaps "
-author: "Joe Mienko"
-date: "Sunday, August 03, 2014"
+title: "CTC King County (Communities in Action) Geography Overlaps "
 output:
   html_document:
     theme: journal
@@ -21,8 +19,8 @@ Data have been preprocessed in ArcGIS using the following algorithm
 4. Run `Feature to Polygon` on the resulting ArcMap layer to create a CTC boundary layer. 
 5. Import polygon shapefiles for Washington blocks (from TIGER), for Washington zip codes (from Maponics), and for Seattle Public Schools attendance areas (from Seattle Public Schools). 
 6. Select only those polygons from 5 that intersect the polygon created in 4. 
-7. Save each set of intersecting polygon files as a seperate shapefile. 
-8. Import the resulting data into the POC server using `ogr2ogr` using the following code (the msrs suffix indicates that I have modifed the spatial reference system (SRS)): 
+7. Save each set of intersecting polygon files as a separate shapefile. 
+8. Import the resulting data into the POC server using `ogr2ogr` using the following code (the msrs suffix indicates that I have modified the spatial reference system (SRS)): 
 
 
 ```tcl
@@ -59,7 +57,7 @@ The process above yields six different tables on the POC SQL server: `interventi
 
 ## Analysis of Overlap
 
-Each subset of intervention geometry encompases more area than the actual intervention boundary. For example, as shown in the map below, the intervention boundary is a subset of all of the zip codes which intersect it. 
+Each subset of intervention geometry encompass more area than the actual intervention boundary. For example, as shown in the map below, the intervention boundary is a subset of all of the zip codes which intersect it. 
 
 ```{r create_spatial_polygon, echo=FALSE, message=FALSE, fig.height=7, fig.width=5, fig.align='center'}
 # remove.packages("RODBC")
@@ -149,7 +147,7 @@ title("Zip Code and Intervention Boundary Overlap")
 
 ```
 
-In order to determine the percentage of overlap, we now make use of some of the [OGC Methods on Geography Instances](http://msdn.microsoft.com/en-us/library/bb933917(v=sql.110).aspx) available in SQL Server 2012. Specifically, we make use of `STArea()` which will calculate the area (according to the specificed SRS) for a particular piece of geometry. The code below demonstrates the use of this function within a common table expression (CTE). For each geographic unit, we sum the area contained within the geometries intersecting the intervention boundary (`sum(ogr_geometry.STArea())`). We then divide the `boundary_area` by the total area for each geometry. 
+In order to determine the percentage of overlap, we now make use of some of the [OGC Methods on Geography Instances](http://msdn.microsoft.com/en-us/library/bb933917(v=sql.110).aspx) available in SQL Server 2012. Specifically, we make use of `STArea()` which will calculate the area (according to the specified SRS) for a particular piece of geometry. The code below demonstrates the use of this function within a common table expression (CTE). For each geographic unit, we sum the area contained within the geometries intersecting the intervention boundary (`sum(ogr_geometry.STArea())`). We then divide the `boundary_area` by the total area for each geometry. 
 
 
 ``` SQL
@@ -250,7 +248,7 @@ from
 kable(dat, format = "markdown")
 ```
 
-The overlap percentage can be increased in the zip-code or attendance area boundaries. However, this involves identifiying some mechanism by which we would exclude a particular zip-code or attendance area from measurement reports.
+The overlap percentage can be increased in the zip-code or attendance area boundaries. However, this involves identifying some mechanism by which we would exclude a particular zip-code or attendance area from measurement reports.
 
 ## Summary of Available Measurement Information 
 
