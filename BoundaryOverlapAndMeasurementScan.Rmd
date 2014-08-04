@@ -1,0 +1,293 @@
+---
+title: "CTC King County (Communites in Action) Geography Overlaps "
+author: "Joe Mienko"
+date: "Sunday, August 03, 2014"
+output:
+  html_document:
+    theme: journal
+---
+
+## Preparing Geographic Data
+
+Data have been preprocessed in ArcGIS using the following algorithm
+
+1. Import a line-based shapefile of King County streets from King County's GIS department. 
+2. Select streets in accordance with the cardinal boundaries based on the description provided by the CTC team
+  + Union (North)
+  + 115th (South)
+  + I-5 (West)
+  + Lake Union (East)
+3. Create a new ArcMap Layer with just the selected streets. 
+4. Run `Feature to Polygon` on the resulting ArcMap layer to create a CTC boundary layer. 
+5. Import polygon shapefiles for Washington blocks (from TIGER), for Washington zip codes (from Maponics), and for Seattle Public Schools attendance areas (from Seattle Public Schools). 
+6. Select only those polygons from 5 that intersect the polygon created in 4. 
+7. Save each set of intersecting polygon files as a seperate shapefile. 
+8. Import the resulting data into the POC server using `ogr2ogr` using the following code (the msrs suffix indicates that I have modifed the spatial reference system (SRS)): 
+
+
+```tcl
+"C:\OSGeo4W64\bin\ogr2ogr"  -lco SCHEMA=geog -f MSSQLSpatial "MSSQL:server=POC2;database=dbCoreAdministrativeTables;trusted_connection=yes" "S:\Data Portal\geo_data\CTC\Intervention_Boundary.shp"
+
+```
+
+```tcl
+"C:\OSGeo4W64\bin\ogr2ogr" -lco SCHEMA=geog -f MSSQLSpatial "MSSQL:server=POC2;database=dbCoreAdministrativeTables;trusted_connection=yes" "S:\Data Portal\geo_data\CTC\Intervention_BLOCKS_msrs.shp"
+
+```
+
+```tcl
+"C:\OSGeo4W64\bin\ogr2ogr" -lco SCHEMA=geog -f MSSQLSpatial "MSSQL:server=POC2;database=dbCoreAdministrativeTables;trusted_connection=yes" "S:\Data Portal\geo_data\CTC\Intervention_ZIP_msrs.shp"
+
+```
+
+```tcl
+"C:\OSGeo4W64\bin\ogr2ogr" -lco SCHEMA=geog -f MSSQLSpatial "MSSQL:server=POC2;database=dbCoreAdministrativeTables;trusted_connection=yes" "S:\Data Portal\geo_data\CTC\Intervention_HS.shp"
+
+```
+
+```tcl
+"C:\OSGeo4W64\bin\ogr2ogr" -lco SCHEMA=geog -f MSSQLSpatial "MSSQL:server=POC2;database=dbCoreAdministrativeTables;trusted_connection=yes" "S:\Data Portal\geo_data\CTC\Intervention_MS.shp"
+
+```
+
+```tcl
+"C:\OSGeo4W64\bin\ogr2ogr" -lco SCHEMA=geog -f MSSQLSpatial "MSSQL:server=POC2;database=dbCoreAdministrativeTables;trusted_connection=yes" "S:\Data Portal\geo_data\CTC\Intervention_ES.shp"
+
+```
+
+The process above yields six different tables on the POC SQL server: `intervention_blocks_msrs`, `intervention_zip_msrs`, `intervention_hs`, `intervention_ms`, `intervention_es`, and `intervention_boundary`. The tables are stored in the `geog` schema located within the `dbCoreAdministrativeTables` database. Each table contains geometric definitions of one or more geographic units (e.g. zip codes, blocks, etc.). The initial selection process above ensures that only those geographic units intersecting the intervention boundary are included in a particular table. As shown in the table below, these geographic units represent the lowest-level of geometry available for the proposed  measurements in this intervention without the re-aggregation of individual-level administrative data _or_ original data collection. 
+
+## Analysis of Overlap
+
+Each subset of intervention geometry encompases more area than the actual intervention boundary. For example, as shown in the map below, the intervention boundary is a subset of all of the zip codes which intersect it. 
+
+```{r create_spatial_polygon, echo=FALSE, message=FALSE, fig.height=7, fig.width=5, fig.align='center'}
+# remove.packages("RODBC")
+# install.packages("C:\\Users\\mienkoja\\Dropbox\\blog1\\RODBC"
+#                  ,repos = NULL
+#                  ,type="source")
+
+require(RODBC)
+require(sp)
+require(rgeos)
+
+con <- odbcConnect("POC")
+
+inter_bound <- sqlQuery(con, "select
+                        ibr.ogr_geometry.STAsText() inter_geom 
+                        ,ibr.id
+                      from geog.intervention_boundary ibr")
+
+inter <- SpatialPolygonsDataFrame(readWKT(inter_bound$inter_geom[1]
+                                 ,inter_bound$id[1])
+                         ,data.frame(id = c(as.character(inter_bound$id[1]))
+                                     ,row.names = c(as.character(inter_bound$id[1]))
+                                     )
+                         )
+
+zip_bound <- sqlQuery(con, "select
+                        zbr.ogr_geometry.STAsText() zip_geom 
+                        ,zbr.zip
+                      from geog.intervention_zip_msrs zbr")
+
+zips <- SpatialPolygonsDataFrame(readWKT(zip_bound$zip_geom[1]
+                                 ,zip_bound$zip[1])
+                         ,data.frame(zip = c(as.character(zip_bound$zip[1]))
+                                     ,row.names = c(as.character(zip_bound$zip[1]))
+                                     )
+                         )
+
+for (i in 2:length(zip_bound$zip)) {
+  zips <- rbind(zips
+                   ,SpatialPolygonsDataFrame(readWKT(zip_bound$zip_geom[i]
+                                              ,zip_bound$zip[i])
+                                      ,data.frame(zip = c(as.character(zip_bound$zip[i]))
+                                                  ,row.names = c(as.character(zip_bound$zip[i]))
+                                                  )
+                                      )
+                  )
+}
+
+# block_bound <- sqlQuery(con, "select
+#                         bbr.ogr_geometry.STAsText() block_geom 
+#                         ,bbr.geoid
+#                       from geog.intervention_blocks_msrs bbr")
+# 
+# blocks <- SpatialPolygonsDataFrame(readWKT(block_bound$block_geom[1]
+#                                  ,block_bound$geoid[1])
+#                          ,data.frame(geoid = c(as.character(block_bound$geoid[1]))
+#                                      ,row.names = c(as.character(block_bound$geoid[1]))
+#                                      )
+#                          )
+# 
+# for (i in 2:length(block_bound$geoid)) {
+#   blocks <- rbind(blocks
+#                    ,SpatialPolygonsDataFrame(readWKT(block_bound$block_geom[i]
+#                                               ,block_bound$geoid[i])
+#                                       ,data.frame(geoid = c(as.character(block_bound$geoid[i]))
+#                                                   ,row.names = c(as.character(block_bound$geoid[i]))
+#                                                   )
+#                                       )
+#                   )
+# }
+
+
+NAD83 <- CRS("+init=epsg:4269 +proj=longlat +ellps=GRS80 +datum=NAD83 +no_defs +towgs84=0,0,0")
+
+zips@proj4string <- NAD83
+inter@proj4string <- NAD83
+#blocks@proj4string <- NAD83
+
+plot(zips, border="#008B9B")
+plot(inter, lwd=5, add=TRUE, border="#8B0000")
+title("Zip Code and Intervention Boundary Overlap")
+
+# plot(blocks, border="#008B9B")
+# plot(inter, lwd=5, add=TRUE, border="#8B0000")
+# title("Block and Intervention Boundary Overlap")
+
+
+```
+
+In order to determine the percentage of overlap, we now make use of some of the [OGC Methods on Geography Instances](http://msdn.microsoft.com/en-us/library/bb933917(v=sql.110).aspx) available in SQL Server 2012. Specifically, we make use of `STArea()` which will calculate the area (according to the specificed SRS) for a particular piece of geometry. The code below demonstrates the use of this function within a common table expression (CTE). For each geographic unit, we sum the area contained within the geometries intersecting the intervention boundary (`sum(ogr_geometry.STArea())`). We then divide the `boundary_area` by the total area for each geometry. 
+
+
+``` SQL
+with boundary_tbl as
+(
+select ogr_geometry.STArea() boundary_area
+from geog.intervention_boundary
+),
+boundary_hs_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_hs
+from geog.intervention_hs hs 
+),
+boundary_ms_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_ms
+from geog.intervention_ms ms 
+),
+boundary_es_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_es
+from geog.intervention_es es 
+),
+boundary_zip_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_zip
+from geog.intervention_zip_msrs zip 
+),
+boundary_block_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_block
+from geog.intervention_blocks_msrs block 
+)
+select 
+  b.boundary_area*1.000/hs.boundary_area_hs hs_prop
+	,b.boundary_area*1.000/ms.boundary_area_ms ms_prop
+	,b.boundary_area*1.000/es.boundary_area_es es_prop
+	,b.boundary_area*1.000/zip.boundary_area_zip zip_prop
+	,b.boundary_area*1.000/block.boundary_area_block block_prop
+from 
+	boundary_tbl b 
+	,boundary_hs_tbl hs 
+	,boundary_ms_tbl ms 
+	,boundary_es_tbl es 
+	,boundary_zip_tbl zip
+	,boundary_block_tbl block
+```
+
+The table below displays the results of the above query. As can be seen, only block level measures come close to the 80 percent overlap criteria specified previously. 
+
+```{r, echo=FALSE, results='asis', message=FALSE}
+require(knitr)
+
+
+dat <- sqlQuery(con, "with boundary_tbl as
+(
+select ogr_geometry.STArea() boundary_area
+from geog.intervention_boundary
+),
+boundary_hs_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_hs
+from geog.intervention_hs hs 
+),
+boundary_ms_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_ms
+from geog.intervention_ms ms 
+),
+boundary_es_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_es
+from geog.intervention_es es 
+),
+boundary_zip_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_zip
+from geog.intervention_zip_msrs zip 
+),
+boundary_block_tbl as
+(
+select sum(ogr_geometry.STArea()) boundary_area_block
+from geog.intervention_blocks_msrs block 
+)
+select 
+  b.boundary_area*1.000/hs.boundary_area_hs hs_prop
+  ,b.boundary_area*1.000/ms.boundary_area_ms ms_prop
+	,b.boundary_area*1.000/es.boundary_area_es es_prop
+	,b.boundary_area*1.000/zip.boundary_area_zip zip_prop
+	,b.boundary_area*1.000/block.boundary_area_block block_prop
+from 
+	boundary_tbl b 
+	,boundary_hs_tbl hs 
+	,boundary_ms_tbl ms 
+	,boundary_es_tbl es 
+	,boundary_zip_tbl zip
+	,boundary_block_tbl block")
+kable(dat, format = "markdown")
+```
+
+The overlap percentage can be increased in the zip-code or attendance area boundaries. However, this involves identifiying some mechanism by which we would exclude a particular zip-code or attendance area from measurement reports.
+
+## Summary of Available Measurement Information 
+
+The following table summarizes the availability of the previously identified measurement list in Washington State
+
+| **measurement**                                                     | **category**      | **public_availibility**            | **direct_source**                                | **geographic level**             |
+|-----------------------------------------------------------------|---------------|--------------------------------|----------------------------------------------|------------------------------|
+| Attendance, truancy, absenteeism                                | School        | yes                            | OSPI                                         | attendance area              |
+| Test scores, school GPA  by grade level                         | School        | yes                            | OSPI                                         | attendance area              |
+| Dropouts: event drop outs (last year), status drop outs (final) | School        | yes                            | OSPI                                         | attendance area              |
+| Grade retention/holding back, (not @ right grade for age)       | School        | yes                            | OSPI                                         | attendance area              |
+| Suspensions                                                     | School        | yes                            | OSPI                                         | attendance area              |
+| Expulsions                                                      | School        | yes                            | OSPI                                         | attendance area              |
+| Disciplinary reports                                            | School        | yes                            | OSPI                                         | attendance area              |
+| Special Education                                               | School        | yes                            | OSPI                                         | attendance area              |
+| Kindergarten readiness, school readiness                        | School        | yes                            | OSPI                                         | attendance area              |
+| High school graduation rate                                     | School        | yes                            | OSPI                                         | attendance area              |
+| Juvenile alcohol and drug related arrests                       | Police        | by request                     | Dept. of Sociology                           | block                        |
+| Teen Vandalism arrests                                          | Police        | by request                     | Dept. of Sociology                           | block                        |
+| Teen Violence arrests                                           | Police        | by request                     | Dept. of Sociology                           | block                        |
+| Adjudication rates                                              | Police        | by request                     | Dept. of Sociology                           | block                        |
+| Institutionalization rates (out of home placements)             | Police        | by request                     | Dept. of Sociology                           | block                        |
+| Adolescent pregnancy                                            | Public Health | by request                     | HYS - SPS Permission                         | attendance area              |
+| Adolescent birth                                                | Public Health | by request/for fee             | DOH                                          | zip code                     |
+| Low birth Weight                                                | Public Health | by request/for fee             | DOH                                          | zip code                     |
+| Infant mortality rate                                           | Public Health | by request/for fee             | DOH                                          | zip code                     |
+| Obesity rate                                                    | Public Health | by request/for fee             | DOH                                          | zip code                     |
+| Asthma rate                                                     | Public Health | by request/for fee             | DOH                                          | zip code                     |
+| Adolescent STIs                                                 | Public Health | by request/HYS                 | HYS - SPS Permission                         | attendance area              |
+| Premature births                                                | Public Health | by request/for fee             | DOH                                          | zip code                     |
+| Teen ER visits due to injuries related to violence              | Hospital/ER   | by request/admits only/for fee | DOH (direct hospital inquiry for non-admits) | zip code                     |
+| Teen ER visits related to drug and alcohol                      | Hospital/ER   | by request/admits only/for fee | DOH (direct hospital inquiry for non-admits) | zip code                     |
+| Mental Health                                                   | Hospital/ER   | by request/admits only/for fee | DOH (direct hospital inquiry for non-admits) | zip code                     |
+| Child/teen ER visits that are prospective cases of child abuse  | Hospital/ER   | by request/admits only/for fee | DOH (direct hospital inquiry for non-admits) | zip code                     |
+| Substantiated and reported rates of abuse and neglect           | Child Welfare | by request                     | POC/CA                                       | zip code (potentially block) |
+| Out of home placements, foster care                             | Child Welfare | by request                     | POC/CA                                       | zip code (potentially block) |
+
+
+
+
